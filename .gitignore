@@ -23,6 +23,10 @@ Thumbs.db
 # Logs
 *.log
 
+# NS-3 trace files (can be very large)
+*.tr
+*.pcap
+
 # Temporary files
 *.tmp
 *.bak
