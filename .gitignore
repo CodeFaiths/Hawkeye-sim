@@ -1,0 +1,30 @@
+# NS-3 build directory
+Paraleon-ns3/build/
+Paraleon-ns3/.lock-waf_linux_build
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
