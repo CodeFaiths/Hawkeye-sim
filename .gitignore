@@ -1,34 +1,21 @@
-# NS-3 build directory
-Paraleon-ns3/build/
-Paraleon-ns3/.lock-waf_linux_build
+build/
+.waf-*/
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# NS-3 trace files (can be very large)
+*.pyc
 *.tr
+*.json
+
+*.swp
+zlog-cfg-cur
+*.log
 *.pcap
+*.pdf
 
-# Temporary files
-*.tmp
-*.bak
-*.orig
+contrl
+tags
+.vscode/
+*.zip
 
+
+analysis/trace_reader
+simulation/.lock-waf_linux2_build

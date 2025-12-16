@@ -1,0 +1,46 @@
+digraph pfc_causal_chain {
+    rankdir=LR;
+    node [shape=box style=rounded fontsize=10];
+
+    subgraph cluster_flow_sources {
+        label="Flow sources (root causes)";
+        style=dashed;
+
+        flow_a [label="Flow 0b000101→0b000301\nroot cause weight=28/88"];
+        flow_b [label="Flow 0b000201→0b000401\nroot cause weight=94"];
+    }
+
+    subgraph cluster_pfc {
+        label="Switch PFC events";
+        style=dotted;
+
+        s9 [label="S9 @ prio1 (flow_trace)\npaused=122"];
+        s10 [label="S10 @ inport1 prio3 (pfc_trace)\npaused=88\np2p≈8.5"];
+        s12 [label="S12 @ inport1 prio2 (pfc_trace)\np2p≈170.8"];
+    }
+
+    subgraph cluster_victims {
+        label="Victim flows";
+        style=dashed;
+
+        victim_5 [label="0b000501→0b000301\np2f=12.2"];
+        victim_6 [label="0b000601→0b000301\np2f=12.3"];
+        victim_7 [label="0b000701→0b000301\np2f=8.5"];
+        victim_8 [label="0b000801→0b000301\np2f=15.3"];
+    }
+
+    flow_a -> s9 [label="f2p=28"];
+    flow_b -> s9 [label="f2p=94"];
+
+    s9 -> s10 [label="p2p≈8.5"];
+    flow_a -> s10 [label="f2p=88"];
+
+    s10 -> s12 [label="p2p≈170.8"];
+    flow_a -> s12 [label="p2f=-48.3" color="#888888" fontcolor="#555555"];
+
+    s12 -> victim_5;
+    s12 -> victim_6;
+    s12 -> victim_7;
+    s12 -> victim_8;
+}
+
