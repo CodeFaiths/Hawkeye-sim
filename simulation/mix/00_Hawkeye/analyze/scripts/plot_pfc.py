@@ -4,10 +4,15 @@ import numpy as np
 from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Path to pfc.txt file
-PFC_FILE = os.path.join(BASE_DIR, "..", "mix", "pfc.txt")
-OUT_PNG1 = os.path.join(BASE_DIR, "pfc_frame_count.png")
-OUT_PNG2 = os.path.join(BASE_DIR, "pfc_pause_rate.png")
+# Updated paths for the new directory structure
+PFC_FILE = os.path.join(BASE_DIR, "..", "..", "output", "pfc.txt")
+OUT_DIR = os.path.join(BASE_DIR, "..", "figures")
+OUT_PNG1 = os.path.join(OUT_DIR, "pfc_frame_count.png")
+OUT_PNG2 = os.path.join(OUT_DIR, "pfc_pause_rate.png")
+
+# Ensure output directory exists
+if not os.path.exists(OUT_DIR):
+    os.makedirs(OUT_DIR)
 
 # Time window for calculating pause rate (in nanoseconds)
 # 1ms window
