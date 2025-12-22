@@ -227,6 +227,7 @@ namespace ns3 {
 		}
 
 		m_rdmaEQ = CreateObject<RdmaEgressQueue>();
+		m_txBytes = 0; // Initialize transmitted bytes counter
 	}
 
 	QbbNetDevice::~QbbNetDevice()
@@ -250,6 +251,7 @@ namespace ns3 {
 		m_txMachineState = READY;
 		NS_ASSERT_MSG(m_currentPkt != 0, "QbbNetDevice::TransmitComplete(): m_currentPkt zero");
 		m_phyTxEndTrace(m_currentPkt);
+		m_txBytes += m_currentPkt->GetSize(); // Accumulate transmitted bytes
 		m_currentPkt = 0;
 		DequeueAndTransmit();
 	}
@@ -374,10 +376,12 @@ namespace ns3 {
 			unsigned qIndex = ch.pfc.qIndex;
 			if (ch.pfc.time > 0){
 				m_tracePfc(1);  //收到PFC帧触发回调
+				//std::cout<<"ch.sip: "<<ch.sip<<" ch.dip: "<<ch.dip<<" ch.qIndex: "<<qIndex<<std::endl;
 				m_paused[qIndex] = true;
 			}else{
 				m_tracePfc(0);
 				Resume(qIndex);
+				//std::cout<<"ch.sip: "<<ch.sip<<" ch.dip: "<<ch.dip<<" ch.qIndex: "<<qIndex<<std::endl;
 			}
 		}else { // non-PFC packets (data, ACK, NACK, CNP...)
 			if (m_node->GetNodeType() > 0){ // switch

@@ -1,0 +1,36 @@
+# Minimal config for H1->H2 single flow via S1-S3-S2
+TOPOLOGY_FILE mix/01_Sandbox/config/topology_h2_s3.txt
+FLOW_FILE mix/01_Sandbox/config/flow.txt
+TRACE_FILE mix/01_Sandbox/config/trace.txt
+TRACE_OUTPUT_FILE mix/01_Sandbox/output/trace_out.tr
+PFC_OUTPUT_FILE mix/01_Sandbox/output/pfc.txt
+FCT_OUTPUT_FILE mix/01_Sandbox/output/fct.txt
+QLEN_MON_FILE mix/01_Sandbox/output/qlen.txt
+DIR mix/01_Sandbox/output
+
+# Basic link/packet parameters
+DATA_RATE 100Gbps
+LINK_DELAY 1us
+PACKET_PAYLOAD_SIZE 1000
+L2_CHUNK_SIZE 1000
+L2_ACK_INTERVAL 1
+L2_BACK_TO_ZERO 0
+
+# Congestion control / reliability
+ENABLE_QCN 0
+ERROR_RATE_PER_LINK 0
+ACK_HIGH_PRIO 1
+KMAX_MAP 1 100000000000 160
+KMIN_MAP 1 100000000000 40
+PMAX_MAP 1 100000000000 0.2
+QLEN_MON_START 0
+QLEN_MON_END 5000000000
+
+SIMULATOR_STOP_TIME 0.01
+
+
+# Link utilization monitoring 链路利用率监控
+LINK_UTIL_MON_FILE mix/01_Sandbox/output/link_util.txt
+LINK_UTIL_MON_INTERVAL 5000
+LINK_UTIL_MON_START 0
+LINK_UTIL_MON_END 5000000000

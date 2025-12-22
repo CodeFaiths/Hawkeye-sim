@@ -142,7 +142,7 @@ public:
       uint32_t seq;
       uint32_t eventID;
       uint16_t sport, dport;
-    } polling; //l3Port = 0xFA, for flow path trace
+    } polling; //l3Port = 0xFA, for flow path trace 定义POLLING包(轮询头部)
     
   };
 

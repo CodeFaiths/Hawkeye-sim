@@ -148,13 +148,13 @@ void RdmaClient::StartApplication (void)
   // get RDMA driver and add up queue pair
   Ptr<Node> node = GetNode();
   Ptr<RdmaDriver> rdma = node->GetObject<RdmaDriver>();
-  std::cout << "[RdmaClient Start t=" << Simulator::Now().GetSeconds() << "s] "
-            << "node=" << node->GetId()
-            << " local=" << m_sip << ":" << m_sport
-            << " remote=" << m_dip << ":" << m_dport
-            << " size=" << m_size << "B"
-            << " pg=" << m_pg
-            << std::endl;
+  // std::cout << "[RdmaClient Start t=" << Simulator::Now().GetSeconds() << "s] "
+  //           << "node=" << node->GetId()
+  //           << " local=" << m_sip << ":" << m_sport
+  //           << " remote=" << m_dip << ":" << m_dport
+  //           << " size=" << m_size << "B"
+  //           << " pg=" << m_pg
+  //           << std::endl;
   rdma->AddQueuePair(m_size, m_pg, m_sip, m_dip, m_sport, m_dport, m_win, m_baseRtt, MakeCallback(&RdmaClient::Finish, this));
 }
 

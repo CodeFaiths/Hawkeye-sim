@@ -205,6 +205,12 @@ public:
 	void TakeDown(); // take down this device
 	void UpdateNextAvail(Time t);
 
+	// Get total transmitted bytes (for link utilization monitoring)
+	uint64_t GetTxBytes() const { return m_txBytes; }
+
+protected:
+	uint64_t m_txBytes; // Total transmitted bytes counter
+
 	TracedCallback<Ptr<const Packet>, Ptr<RdmaQueuePair> > m_traceQpDequeue; // the trace for printing dequeue
 };
 

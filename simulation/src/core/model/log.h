@@ -27,6 +27,21 @@
 #include <map>
 #include <algorithm>
 
+// 终端颜色转义序列（放在 NS3_LOG_ENABLE 判断之前，所有文件都可用）
+#define COLOR_RESET   "\033[0m"
+#define COLOR_WHITE   "\033[37m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_RED     "\033[31m"
+
+// 简单彩色日志宏：不区分等级，只区分颜色
+#define LOG_WHITE(msg) do { std::cout << COLOR_WHITE; std::cout << msg; std::cout << COLOR_RESET << std::endl; } while (0)
+#define LOG_GREEN(msg) do { std::cout << COLOR_GREEN; std::cout << msg; std::cout << COLOR_RESET << std::endl; } while (0)
+#define LOG_YELLOW(msg) do { std::cout << COLOR_YELLOW; std::cout << msg; std::cout << COLOR_RESET << std::endl; } while (0)
+#define LOG_BLUE(msg)  do { std::cout << COLOR_BLUE;  std::cout << msg; std::cout << COLOR_RESET << std::endl; } while (0)
+#define LOG_RED(msg)   do { std::cout << COLOR_RED;   std::cout << msg; std::cout << COLOR_RESET << std::endl; } while (0)
+
 namespace ns3 {
 
 enum LogLevel {
@@ -359,6 +374,7 @@ void LogComponentDisableAll (enum LogLevel level);
 #define NS_LOG_FUNCTION(msg)
 #define NS_LOG_LOGIC(msg)
 #define NS_LOG_UNCOND(msg)
+
 
 #endif /* LOG_ENABLE */
 

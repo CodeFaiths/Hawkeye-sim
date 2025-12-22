@@ -18,7 +18,7 @@ class SwitchNode : public Node{
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev)
 
 	// monitor of PFC
-	uint32_t m_bytes[pCnt][pCnt][qCnt]; // m_bytes[inDev][outDev][qidx] is the bytes from inDev enqueued for outDev at qidx
+	uint32_t m_bytes[pCnt][pCnt][qCnt]; // m_bytes[inDev][outDev][qidx] is the bytes from inDev enqueued for outDev at qidx [入端口][出端口][队列索引]
 	
 	uint64_t m_txBytes[pCnt]; // counter of tx bytes 发送字节数计数器
 
@@ -30,7 +30,7 @@ class SwitchNode : public Node{
 	static const uint32_t flowHashSeed = 0x233;	// Seed for flow hash 流哈希种子
 	static const uint32_t flowEntryNum = (1 << 12);	// Number of flowTelemetryData entries 流遥测数据条目数
 	static const uint32_t epochNum = 2;	// 周期数
-	static const uint32_t portToPortSlot = 5;	// port to port bytes slot 端口到端口字节槽
+	static const uint32_t portToPortSlot = 5;	// port to port bytes slot 端口到端口时间槽数量
 	uint64_t m_lastSignalEpoch;	// last signal time 最后一个信号时间
 	uint32_t m_slotIdx;	// current epoch index 当前周期索引
 	uint64_t m_lastPollingEpoch[pCnt];	// last polling epoch 最后一个轮询周期
@@ -67,10 +67,10 @@ class SwitchNode : public Node{
 
 		uint32_t lastTimeStep;		// last timestep >> 5
 	};
-	FlowTelemetryData m_flowTelemetryData[pCnt][epochNum][flowEntryNum]; // flow telemetry data 端口 周期 流条目
-	PortTelemetryData m_portTelemetryData[epochNum][pCnt]; // port telemetry data 周期 端口条目
-	uint32_t m_portToPortBytes[pCnt][pCnt]; // bytes from port to port 端口到端口字节
-	uint32_t m_portToPortBytesSlot[pCnt][pCnt][portToPortSlot]; // port to port bytes slot 端口到端口字节槽
+	FlowTelemetryData m_flowTelemetryData[pCnt][epochNum][flowEntryNum]; // 流遥测表： 端口 周期 流
+	PortTelemetryData m_portTelemetryData[epochNum][pCnt]; // 端口遥测表：周期 端口
+	uint32_t m_portToPortBytes[pCnt][pCnt]; // bytes from port to port 端口到端口字节流量计
+	uint32_t m_portToPortBytesSlot[pCnt][pCnt][portToPortSlot]; // 端口到端口字节槽
 
 protected:
 	bool m_ecnEnabled;
@@ -100,6 +100,9 @@ public:
 	void ClearTable();
 	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch);
 	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);
+
+	// Get tx bytes for a specific port (for link utilization monitoring)
+	uint64_t GetTxBytes(uint32_t portIndex) const { return m_txBytes[portIndex]; }
 
 	// for approximate calc in PINT
 	int logres_shift(int b, int l);

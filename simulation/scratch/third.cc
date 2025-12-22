@@ -45,7 +45,7 @@ using namespace std;
 NS_LOG_COMPONENT_DEFINE("GENERIC_SIMULATION");
 
 // 设置为 1 开启日志，设置为 0 关闭日志
-#define ENABLE_PRINT_DEBUG_LOG 1
+#define ENABLE_PRINT_DEBUG_LOG 0
 
 //网络配置参数
 uint32_t cc_mode = 1;
@@ -64,33 +64,53 @@ std::string rate_ai, rate_hai, min_rate = "100Mb/s";
 std::string dctcp_rate_ai = "1000Mb/s";
 
 //性能调优参数
-bool clamp_target_rate = false, l2_back_to_zero = false;
-double error_rate_per_link = 0.0;
-uint32_t has_win = 1;
-uint32_t global_t = 1;
-uint32_t mi_thresh = 5;
-bool var_win = false, fast_react = true;
-bool multi_rate = true;
-bool sample_feedback = false;
-double pint_log_base = 1.05;
-double pint_prob = 1.0;
-double u_target = 0.95;
-uint32_t int_multi = 1;
-bool rate_bound = true;
+bool clamp_target_rate = false, l2_back_to_zero = false; // 限制目标速率，L2归零
+double error_rate_per_link = 0.0; // 每条链路的错误率
+uint32_t has_win = 1; // 是否启用窗口机制
+uint32_t global_t = 1; // 全局时间常数/阈值
+uint32_t mi_thresh = 5; // MI (乘性增加) 阈值
+bool var_win = false, fast_react = true; // 可变窗口，快速反应
+bool multi_rate = true; // 是否支持多速率
+bool sample_feedback = false; // 是否启用采样反馈
+double pint_log_base = 1.05; // PINT算法的对数底数
+double pint_prob = 1.0; // PINT采样概率
+double u_target = 0.95; // 目标链路利用率
+uint32_t int_multi = 1; // 整数乘数
+bool rate_bound = true; // 速率边界限制
 
-uint32_t ack_high_prio = 0;
-uint64_t link_down_time = 0;
-uint32_t link_down_A = 0, link_down_B = 0;
+uint32_t ack_high_prio = 0; // ACK报文是否设为高优先级
+uint64_t link_down_time = 0; // 链路断开的时间点
+uint32_t link_down_A = 0, link_down_B = 0; // 链路断开的两个端点节点ID
 
-uint32_t enable_trace = 1;
+uint32_t enable_trace = 1; // 是否启用追踪记录
 
-uint32_t buffer_size = 16;
+uint32_t buffer_size = 16; // 缓冲区大小（通常以数据包数量计）
 
-uint32_t qlen_dump_interval = 100000000, qlen_mon_interval = 100;
+// dump queue length statistics every 500 us (was 100 ms), monitor every 100 ns
+uint32_t qlen_dump_interval = 1000000, qlen_mon_interval = 100;
+// 队列长度监控的开始和结束时间 (ns)
 uint64_t qlen_mon_start = 2000000000, qlen_mon_end = 2100000000;
-string qlen_mon_file;
+string qlen_mon_file; // 队列长度监控输出文件路径
 
 unordered_map<uint64_t, uint32_t> rate2kmax, rate2kmin;
+
+// 链路利用率监控参数
+string link_util_mon_file;                    // 链路利用率输出文件路径
+uint32_t link_util_mon_interval = 100000;     // 监控间隔 (ns), 默认100us
+uint64_t link_util_mon_start = 0;             // 监控开始时间 (ns)
+uint64_t link_util_mon_end = 5000000000;      // 监控结束时间 (ns), 默认5s
+
+// 存储每个节点每个端口的上次统计字节数和时间
+struct LinkStats {
+    uint64_t lastTxBytes;      // 上次统计时的发送字节数
+    uint64_t lastTime;         // 上次统计时间 (ns)
+    uint64_t linkBw;           // 链路带宽 (bps)
+    
+    LinkStats() : lastTxBytes(0), lastTime(0), linkBw(0) {}
+};
+
+// <nodeId, <portId, LinkStats>>
+map<uint32_t, map<uint32_t, LinkStats>> linkStatsMap;
 unordered_map<uint64_t, double> rate2pmax;
 
 set<int> agent_nodes;
@@ -141,25 +161,34 @@ uint32_t flow_num;
 uint32_t flow_completed = 0;
 
 void ReadFlowInput(){
+#if ENABLE_PRINT_DEBUG_LOG
+	cout<<"--------------------------------"<<endl;
+	cout<<"ReadFlowInput!"<<endl;
+	cout<<"flow_num: "<<flow_num<<endl<<endl;
+#endif
 	if (flow_input.idx < flow_num){
 		flowf >> flow_input.src >> flow_input.dst >> flow_input.pg >> flow_input.dport >> flow_input.maxPacketCount >> flow_input.start_time;
 		NS_ASSERT(n.Get(flow_input.src)->GetNodeType() == 0 && n.Get(flow_input.dst)->GetNodeType() == 0);
 	}
 }
 void ScheduleFlowInputs(){
+#if ENABLE_PRINT_DEBUG_LOG
+	cout<<"--------------------------------"<<endl;
+	cout<<"ScheduleFlowInputs!"<<endl;
+#endif
 	while (flow_input.idx < flow_num && Seconds(flow_input.start_time) == Simulator::Now()){
 		uint32_t port = portNumder[flow_input.src][flow_input.dst]++; // get a new port number
 		RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
 		ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src));
 		appCon.Start(Time(0));
-		std::cout << "[FlowSchedule t=" << Simulator::Now().GetSeconds() << "s] "
-				  << "flow#" << flow_input.idx
-				  << " srcNode=" << flow_input.src << " (" << serverAddress[flow_input.src] << ":" << port << ")"
-				  << " -> dstNode=" << flow_input.dst << " (" << serverAddress[flow_input.dst] << ":" << flow_input.dport << ")"
-				  << " size=" << flow_input.maxPacketCount << "B"
-				  << " pg=" << flow_input.pg
-				  << " scheduledStart=" << flow_input.start_time << "s"
-				  << std::endl;
+		// std::cout << "[FlowSchedule t=" << Simulator::Now().GetSeconds() << "s] "
+		// 		  << "flow#" << flow_input.idx
+		// 		  << " srcNode=" << flow_input.src << " (" << serverAddress[flow_input.src] << ":" << port << ")"
+		// 		  << " -> dstNode=" << flow_input.dst << " (" << serverAddress[flow_input.dst] << ":" << flow_input.dport << ")"
+		// 		  << " size=" << flow_input.maxPacketCount << "B"
+		// 		  << " pg=" << flow_input.pg
+		// 		  << " scheduledStart=" << flow_input.start_time << "s"
+		// 		  << std::endl<<endl;
 
 		// get the next flow input
 		flow_input.idx++;
@@ -175,10 +204,22 @@ void ScheduleFlowInputs(){
 }
 
 Ipv4Address node_id_to_ip(uint32_t id){
+	#if ENABLE_PRINT_DEBUG_LOG
+	    // cout<<endl<<"--------------------------------"<<endl;
+	    // cout<<"node_id_to_ip!"<<endl;
+	    // cout<<"id: "<<id<<endl;
+		// cout<<"ip: "<<Ipv4Address(0x0b000001 + ((id / 256) * 0x00010000) + ((id % 256) * 0x00000100))<<endl<<endl;
+	#endif
 	return Ipv4Address(0x0b000001 + ((id / 256) * 0x00010000) + ((id % 256) * 0x00000100));
 }
 
 uint32_t ip_to_node_id(Ipv4Address ip){
+	#if ENABLE_PRINT_DEBUG_LOG
+	    // cout<<"--------------------------------"<<endl;
+	    // cout<<"ip_to_node_id!"<<endl;
+	    // cout<<"ip: "<<ip<<endl;
+	    // cout<<"node_id: "<<((ip.Get() >> 8) & 0xffff)<<endl<<endl;
+	#endif
 	return (ip.Get() >> 8) & 0xffff;
 }
 
@@ -192,7 +233,7 @@ std::string Ipv4AddressToString(const Ipv4Address &ip)
 //流完成回调
 void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){
 #if ENABLE_PRINT_DEBUG_LOG
-	cout<<"This is qp_finish!"<<endl;
+	LOG_GREEN("qp_finish!");
 #endif
 	uint32_t sid = ip_to_node_id(q->sip), did = ip_to_node_id(q->dip);
 	uint64_t base_rtt = pairRtt[sid][did], b = pairBw[sid][did]; //获取源节点到目的节点的往返延迟和瓶颈带宽
@@ -202,13 +243,16 @@ void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){
 	// sip, dip, sport, dport, size (B), start_time, fct (ns), standalone_fct (ns)
 	fprintf(fout, "%08x %08x %u %u %lu %lu %lu %lu\n", q->sip.Get(), q->dip.Get(), q->sport, q->dport, q->m_size, q->startTime.GetTimeStep(), (Simulator::Now() - q->startTime).GetTimeStep(), standalone_fct);
 	fflush(fout);
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"sid: "<<sid<<" did: "<<did<<" base_rtt: "<<base_rtt<<" b: "<<b<<" total_bytes: "<<total_bytes<<" standalone_fct: "<<standalone_fct<<endl;
+	#endif
 	std::cout << "[FlowComplete t=" << Simulator::Now().GetSeconds() << "s] "
 			  << "srcNode=" << sid << " (" << Ipv4AddressToString(q->sip) << ":" << q->sport << ")"
 			  << " -> dstNode=" << did << " (" << Ipv4AddressToString(q->dip) << ":" << q->dport << ")"
 			  << " size=" << q->m_size << "B"
 			  << " FCT=" << (Simulator::Now() - q->startTime).GetSeconds() << "s"
 			  << " standaloneFCT=" << (double)standalone_fct / 1e9 << "s"
-			  << std::endl;
+			  << std::endl<<endl;
 
 	// remove rxQp from the receiver
 	Ptr<Node> dstNode = n.Get(did);
@@ -218,11 +262,18 @@ void qp_finish(FILE* fout, Ptr<RdmaQueuePair> q){
 	// track completed flows and stop simulator when all are done
 	flow_completed++;
 	if (flow_completed >= flow_num){
+		//#if ENABLE_PRINT_DEBUG_LOG
+			cout<<"********************All flows completed, stopping simulator********************"<<endl<<endl;
+		//#endif
 		Simulator::Stop();
 	}
 }
 
 void get_pfc(FILE* fout, Ptr<QbbNetDevice> dev, uint32_t type){  //文件 设备 类型
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"--------------------------------"<<endl;
+		cout<<"get_pfc!"<<endl;
+	#endif
 	fprintf(fout, "%lu %u %u %u %u\n", Simulator::Now().GetTimeStep(), dev->GetNode()->GetId(), dev->GetNode()->GetNodeType(), dev->GetIfIndex(), type);
 }
 
@@ -248,6 +299,7 @@ void monitor_buffer(FILE* qlen_output, NodeContainer *n){
 				uint32_t size = 0;
 				for (uint32_t k = 0; k < SwitchMmu::qCnt; k++) //遍历交换机端口所有队列
 					size += sw->m_mmu->egress_bytes[j][k]; //统计交换机端口所有队列的总长度
+				//cout<<"switch "<<i<<" port "<<j<<" size: "<<size<<endl;
 				queue_result[i][j].add(size); //将交换机端口所有队列的总长度添加到交换机缓冲区队列长度记录中
 			}
 		}
@@ -259,7 +311,7 @@ void monitor_buffer(FILE* qlen_output, NodeContainer *n){
 				fprintf(qlen_output, "%u %u", it0.first, it1.first);
 				auto &dist = it1.second.cnt;
 				for (uint32_t i = 0; i < dist.size(); i++)
-					fprintf(qlen_output, " %u", dist[i]);
+					fprintf(qlen_output, " %u", dist[i]); 
 				fprintf(qlen_output, "\n");
 			}
 		fflush(qlen_output);
@@ -268,8 +320,90 @@ void monitor_buffer(FILE* qlen_output, NodeContainer *n){
 		Simulator::Schedule(NanoSeconds(qlen_mon_interval), &monitor_buffer, qlen_output, n); //递归调用
 }
 
+/**
+ * 监控链路利用率和吞吐量（支持主机和交换机节点）
+ * @param link_util_output 输出文件指针
+ * @param n 节点容器指针
+ * 
+ * 输出格式:
+ * time: <timestamp_ns>
+ * <node_id> <port_id> <tx_bytes_total> <tx_throughput_Gbps> <tx_util%>
+ */
+void monitor_link_utilization(FILE* link_util_output, NodeContainer *n) {
+    uint64_t currentTime = Simulator::Now().GetTimeStep();
+    
+    fprintf(link_util_output, "time: %lu\n", currentTime);
+    
+    for (uint32_t i = 0; i < n->GetN(); i++) {
+        Ptr<Node> node = n->Get(i);
+        uint32_t nodeType = node->GetNodeType();
+        
+        // 遍历节点的所有网络设备(端口)
+        for (uint32_t j = 1; j < node->GetNDevices(); j++) {
+            Ptr<QbbNetDevice> qbbDev = DynamicCast<QbbNetDevice>(node->GetDevice(j));
+            if (qbbDev == nullptr) continue;
+            
+            uint64_t linkBw = qbbDev->GetDataRate().GetBitRate();
+            
+            // 初始化该端口的统计信息
+            if (linkStatsMap[i].find(j) == linkStatsMap[i].end()) {
+                linkStatsMap[i][j].linkBw = linkBw;
+                linkStatsMap[i][j].lastTime = currentTime;
+            }
+            
+            LinkStats& stats = linkStatsMap[i][j];
+            uint64_t currentTxBytes = 0;
+            
+            // 根据节点类型获取发送字节数
+            if (nodeType == 0) {  // 主机节点
+                currentTxBytes = qbbDev->GetTxBytes();
+            } else if (nodeType == 1) {  // 交换机节点
+                Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(node);
+                if (sw != nullptr) {
+                    currentTxBytes = sw->GetTxBytes(j);
+                }
+            }
+            
+            // 计算时间间隔 (秒)
+            double deltaTime = (currentTime - stats.lastTime) / 1e9;
+            
+            if (deltaTime > 0 && stats.lastTime > 0) {
+                uint64_t deltaTxBytes = currentTxBytes - stats.lastTxBytes;
+                
+                // 计算吞吐量 (Gbps)
+                double txThroughput_Gbps = (deltaTxBytes * 8.0) / (deltaTime * 1e9);
+                
+                // 计算利用率 (%)
+                double txUtil = (linkBw > 0) ? (txThroughput_Gbps * 1e9 / linkBw) * 100.0 : 0.0;
+                if (txUtil > 100.0) txUtil = 100.0;
+                
+                fprintf(link_util_output, "%u %u %lu %.4f %.2f\n",
+                        i, j, currentTxBytes, txThroughput_Gbps, txUtil);
+            }
+            
+            stats.lastTxBytes = currentTxBytes;
+            stats.lastTime = currentTime;
+        }
+    }
+    
+    fflush(link_util_output);
+    
+    // 如果当前时间小于监控结束时间，则在指定间隔后再次调度链路利用率监控函数
+    if (currentTime < link_util_mon_end) {
+        Simulator::Schedule(NanoSeconds(link_util_mon_interval), 
+                          &monitor_link_utilization, link_util_output, n);
+    }
+}
+
+
 //计算路由 
 void CalculateRoute(Ptr<Node> host){
+	#if ENABLE_PRINT_DEBUG_LOG
+		// cout<<"--------------------------------"<<endl;
+		// cout<<"CalculateRoute!"<<endl;
+		// cout<<"host: "<<host->GetId()<<endl;
+		// cout<<"--------------------------------"<<endl;
+	#endif
 	// queue for the BFS.
 	vector<Ptr<Node> > q;
 	// Distance from the host to each node.
@@ -305,6 +439,7 @@ void CalculateRoute(Ptr<Node> host){
 			// if 'now' is on the shortest path from 'next' to 'host'.
 			if (d + 1 == dis[next]){
 				nextHop[next][host].push_back(now);
+				//cout<<"nextHop["<<next->GetId()<<"]["<<host->GetId()<<"].push_back("<<now->GetId()<<")"<<endl;
 			}
 		}
 	}
@@ -317,6 +452,10 @@ void CalculateRoute(Ptr<Node> host){
 }
 
 void CalculateRoutes(NodeContainer &n){
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<endl;
+		LOG_YELLOW("CalculateRoutes!");
+	#endif
 	for (int i = 0; i < (int)n.GetN(); i++){
 		Ptr<Node> node = n.Get(i);
 		if (node->GetNodeType() == 0)
@@ -326,9 +465,14 @@ void CalculateRoutes(NodeContainer &n){
 
 //设置路由表 将计算好的“逻辑路由信息”下发到每个节点的实际转发表/路由表中
 void SetRoutingEntries(){
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<endl<<"********************************"<<endl;
+		LOG_GREEN("SetRoutingEntries!");
+	#endif
 	// For each node.
 	for (auto i = nextHop.begin(); i != nextHop.end(); i++){ //遍历所有节点
 		Ptr<Node> node = i->first;
+		//cout<<"node: "<<node->GetId()<<" nextHop.size(): "<<i->second.size()<<endl;
 		auto &table = i->second; //table是node的下一跳节点列表
 		for (auto j = table.begin(); j != table.end(); j++){
 			// The destination node.
@@ -340,21 +484,43 @@ void SetRoutingEntries(){
 			for (int k = 0; k < (int)nexts.size(); k++){
 				Ptr<Node> next = nexts[k]; //next是下一跳节点
 				uint32_t interface = nbr2if[node][next].idx;
-				if (node->GetNodeType() == 1) //如果node是交换机，则添加转发表项
+				//cout<<"dstAddr: "<<dstAddr<<" interface: "<<interface<<endl;
+				if (node->GetNodeType() == 1) { //如果node是交换机，则添加转发表项
 					DynamicCast<SwitchNode>(node)->AddTableEntry(dstAddr, interface);
-				else{
+					#if ENABLE_PRINT_DEBUG_LOG
+						//cout<<"SwitchNode AddTableEntry("<<dstAddr<<", "<<interface<<")"<<endl;
+					#endif
+				} else {
 					node->GetObject<RdmaDriver>()->m_rdma->AddTableEntry(dstAddr, interface); //如果node是主机，则添加路由表项
+					#if ENABLE_PRINT_DEBUG_LOG
+						//cout<<"HostNode AddTableEntry("<<dstAddr<<", "<<interface<<")"<<endl;
+					#endif
 				}
 			}
 		}
 	}
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"********************************"<<endl<<endl;
+	#endif
 }
 
 // take down the link between a and b, and redo the routing 断开两点间的链路并重新计算路由
 void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"--------------------------------"<<endl;
+		cout<<"TakeDownLink"<<endl<<endl;
+	#endif
 	if (!nbr2if[a][b].up) //如果链路关闭，则跳过
 		return;
 	// take down link between a and b
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"a: "<<a->GetId()<<", b: "<<b->GetId()<<endl;
+		cout<<"[TakeDownLink t="<<Simulator::Now().GetSeconds()<<"s] "
+			<<"link between node "<<a->GetId()
+			<<" and node "<<b->GetId()
+			<<" is taken down.";
+			cout<<"********************************"<<endl<<endl;
+	#endif
 	nbr2if[a][b].up = nbr2if[b][a].up = false; //关闭链路
 	nextHop.clear(); //清空路由表
 	CalculateRoutes(n); //重新计算路由
@@ -378,9 +544,17 @@ void TakeDownLink(NodeContainer n, Ptr<Node> a, Ptr<Node> b){
 }
 
 uint64_t get_nic_rate(NodeContainer &n){
-	for (uint32_t i = 0; i < n.GetN(); i++)
-		if (n.Get(i)->GetNodeType() == 0)
+	#if ENABLE_PRINT_DEBUG_LOG
+		// cout<<"--------------------------------"<<endl;
+		// LOG_BLUE("get_nic_rate!");
+	#endif
+	for (uint32_t i = 0; i < n.GetN(); i++){
+		if (n.Get(i)->GetNodeType() == 0){
+			cout<<"Node "<<n.Get(i)->GetId()<<" nic_rate: "<<DynamicCast<QbbNetDevice>(n.Get(i)->GetDevice(1))->GetDataRate().GetBitRate()<<endl;
 			return DynamicCast<QbbNetDevice>(n.Get(i)->GetDevice(1))->GetDataRate().GetBitRate();
+		}
+	}
+
 }
 
 int main(int argc, char *argv[])
@@ -691,6 +865,18 @@ int main(int argc, char *argv[])
 			}else if (key.compare("QLEN_MON_END") == 0){
 				conf >> qlen_mon_end;
 				std::cout << "QLEN_MON_END\t\t\t" << qlen_mon_end << '\n';
+                        }else if (key.compare("LINK_UTIL_MON_FILE") == 0){
+                                conf >> link_util_mon_file;
+                                std::cout << "LINK_UTIL_MON_FILE\t\t" << link_util_mon_file << '\n';
+                        }else if (key.compare("LINK_UTIL_MON_INTERVAL") == 0){
+                                conf >> link_util_mon_interval;
+                                std::cout << "LINK_UTIL_MON_INTERVAL\t\t" << link_util_mon_interval << '\n';
+                        }else if (key.compare("LINK_UTIL_MON_START") == 0){
+                                conf >> link_util_mon_start;
+                                std::cout << "LINK_UTIL_MON_START\t\t" << link_util_mon_start << '\n';
+                        }else if (key.compare("LINK_UTIL_MON_END") == 0){
+                                conf >> link_util_mon_end;
+                                std::cout << "LINK_UTIL_MON_END\t\t" << link_util_mon_end << '\n';
 			}else if (key.compare("MULTI_RATE") == 0){
 				int v;
 				conf >> v;
@@ -767,6 +953,11 @@ int main(int argc, char *argv[])
 	else // others, no extra header
 		IntHeader::mode = IntHeader::NONE;
 
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<"cc_mode: "<<cc_mode<<endl;
+		cout<<"IntHeader::mode: "<<IntHeader::mode<<endl;
+	#endif
+
 	// Set Pint
 	if (cc_mode == 10){
 		Pint::set_log_base(pint_log_base);
@@ -776,6 +967,10 @@ int main(int argc, char *argv[])
 
 	//SeedManager::SetSeed(time(NULL));
 
+	#if ENABLE_PRINT_DEBUG_LOG
+		LOG_GREEN("Read topology.");
+	#endif
+
 	topof.open(topology_file.c_str());
 	flowf.open(flow_file.c_str());
 	tracef.open(trace_file.c_str());
@@ -784,8 +979,19 @@ int main(int argc, char *argv[])
 	flowf >> flow_num;
 	tracef >> trace_num;
 
+	//#if ENABLE_PRINT_DEBUG_LOG
+		LOG_WHITE("node_num: " << node_num
+			<< ", switch_num: " << switch_num
+			<< ", link_num: " << link_num);
+		LOG_WHITE("flow_num: " << flow_num
+			<< ", trace_num: " << trace_num);
+	//#endif
+
 	
 	//n.Create(node_num);创建节点（主机以及交换机）
+	#if ENABLE_PRINT_DEBUG_LOG
+		LOG_GREEN("Create nodes.(Switch and Host)");
+	#endif
 	std::vector<uint32_t> node_type(node_num, 0);
 	for (uint32_t i = 0; i < switch_num; i++)
 	{
@@ -808,14 +1014,23 @@ int main(int argc, char *argv[])
 
 	InternetStackHelper internet;
 	internet.Install(n);  //安装网络协议栈
+	#if ENABLE_PRINT_DEBUG_LOG
+		LOG_GREEN("Install Internet Stack.");
+	#endif
 
 	//
 	// Assign IP to each server 为服务器（主机）节点分配IP
 	//
+	#if ENABLE_PRINT_DEBUG_LOG
+		LOG_GREEN("Assign IP to each server.");
+	#endif
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 0){ // is server
 			serverAddress.resize(i + 1);
 			serverAddress[i] = node_id_to_ip(i);
+			//#if ENABLE_PRINT_DEBUG_LOG
+				LOG_WHITE("server " << i << " address: " << serverAddress[i]);
+			//#endif
 		}
 	}
 
@@ -824,6 +1039,11 @@ int main(int argc, char *argv[])
 	//
 	// Explicitly create the channels required by the topology.
 	//
+
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<endl;
+		LOG_GREEN("Create channels.");
+	#endif
 
 	Ptr<RateErrorModel> rem = CreateObject<RateErrorModel>();  //用于模拟网络传输中数据包丢失（基于指定概率随机丢弃数据包）
 	Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable>();
@@ -874,11 +1094,13 @@ int main(int argc, char *argv[])
 			Ptr<Ipv4> ipv4 = snode->GetObject<Ipv4>();
 			ipv4->AddInterface(d.Get(0));
 			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[src], Ipv4Mask(0xff000000)));
+			//cout<<"Assign IP "<<serverAddress[src]<<" to node "<<src<<endl;
 		}
 		if (dnode->GetNodeType() == 0){
 			Ptr<Ipv4> ipv4 = dnode->GetObject<Ipv4>();
 			ipv4->AddInterface(d.Get(1));
 			ipv4->AddAddress(1, Ipv4InterfaceAddress(serverAddress[dst], Ipv4Mask(0xff000000)));
+			//cout<<"Assign IP "<<serverAddress[dst]<<" to node "<<dst<<endl;
 		}
 
 		// used to create a graph of the topology  idx:网络接口索引 up:链路状态（true表示激活）delay:链路延迟 bw:链路带宽
@@ -890,10 +1112,17 @@ int main(int argc, char *argv[])
 		nbr2if[dnode][snode].up = true;
 		nbr2if[dnode][snode].delay = DynamicCast<QbbChannel>(DynamicCast<QbbNetDevice>(d.Get(1))->GetChannel())->GetDelay().GetTimeStep();
 		nbr2if[dnode][snode].bw = DynamicCast<QbbNetDevice>(d.Get(1))->GetDataRate().GetBitRate();
-
+		//#if ENABLE_PRINT_DEBUG_LOG
+			cout<<"Link:"<<src<<"("<<nbr2if[snode][dnode].idx<<") <--> "
+				<<dst<<"("<<nbr2if[dnode][snode].idx<<") "
+				<<" bw: "<<nbr2if[snode][dnode].bw
+				<<" delay: "<<nbr2if[snode][dnode].delay
+				<<endl;
+		//#endif
 		// This is just to set up the connectivity between nodes. The IP addresses are useless 为链路分配子网，建立节点之间的连通性
 		char ipstring[16];
 		sprintf(ipstring, "10.%d.%d.0", i / 254 + 1, i % 254 + 1);
+		cout<<"Assign subnet "<<ipstring<<"/24 to link "<<src<<" <--> "<<dst<<endl;
 		ipv4.SetBase(ipstring, "255.255.255.0");
 		ipv4.Assign(d);
 
@@ -901,11 +1130,15 @@ int main(int argc, char *argv[])
 
 		DynamicCast<QbbNetDevice>(d.Get(0))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(0))));
 		DynamicCast<QbbNetDevice>(d.Get(1))->TraceConnectWithoutContext("QbbPfc", MakeBoundCallback (&get_pfc, pfc_file, DynamicCast<QbbNetDevice>(d.Get(1))));
+		//cout<<"Set PFC trace for link "<<src<<" <--> "<<dst<<endl<<endl;
 	}
 
 	nic_rate = get_nic_rate(n);
 
 	// config switch
+	#if ENABLE_PRINT_DEBUG_LOG
+		LOG_RED("Configure switches.");
+	#endif
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 1){ // is switch
 			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n.Get(i));
@@ -918,11 +1151,20 @@ int main(int argc, char *argv[])
 				NS_ASSERT_MSG(rate2kmax.find(rate) != rate2kmax.end(), "must set kmax for each link speed");
 				NS_ASSERT_MSG(rate2pmax.find(rate) != rate2pmax.end(), "must set pmax for each link speed");
 				sw->m_mmu->ConfigEcn(j, rate2kmin[rate], rate2kmax[rate], rate2pmax[rate]);  //配置ECN门限和概率
+				#if ENABLE_PRINT_DEBUG_LOG
+					cout<<"Switch "<<sw->GetId()<<" Port "<<j
+						<<" rate: "<<rate
+						<<" kmin: "<<rate2kmin[rate]
+						<<" kmax: "<<rate2kmax[rate]
+						<<" pmax: "<<rate2pmax[rate];
+				#endif
 				// set pfc 读取端口连接的信道传播延迟，估算需要的缓冲头部空间
 				uint64_t delay = DynamicCast<QbbChannel>(dev->GetChannel())->GetDelay().GetTimeStep();
 				uint32_t headroom = rate * delay / 8 / 1000000000 * 3;
 				sw->m_mmu->ConfigHdrm(j, headroom);
-
+				#if ENABLE_PRINT_DEBUG_LOG
+					cout<<" delay: "<<delay<<" headroom: "<<headroom<<endl;	
+				#endif
 				// set pfc alpha, proportional to link bw 根据链路带宽调整PFC抖动抑制比例
 				sw->m_mmu->pfc_a_shift[j] = shift;
 				while (rate > nic_rate && sw->m_mmu->pfc_a_shift[j] > 0){
@@ -952,6 +1194,10 @@ int main(int argc, char *argv[])
 	//
 	// install RDMA driver
 	//
+	#if ENABLE_PRINT_DEBUG_LOG
+		cout<<endl;
+		LOG_GREEN("Install RDMA driver on each server.");
+	#endif
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 0){ // is server
 			// create RdmaHw
@@ -1034,11 +1280,13 @@ int main(int argc, char *argv[])
 				maxRtt = rtt;
 		}
 	}
+	LOG_WHITE("Caulculated maxRtt and maxBdp:");
 	printf("maxRtt=%lu maxBdp=%lu\n", maxRtt, maxBdp); //输出最大往返延迟和最大BDP
 
 	//
 	// setup switch CC
 	//
+	LOG_GREEN("Setup switch CC.");
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 1){ // switch
 			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(n.Get(i));
@@ -1051,6 +1299,7 @@ int main(int argc, char *argv[])
 	// add trace
 	//
 
+	LOG_WHITE("Setup trace.");
 	NodeContainer trace_nodes;
 	for (uint32_t i = 0; i < trace_num; i++)
 	{
@@ -1075,6 +1324,9 @@ int main(int argc, char *argv[])
 				uint8_t intf = j.second.idx;
 				uint64_t bps = DynamicCast<QbbNetDevice>(i.first->GetDevice(j.second.idx))->GetDataRate().GetBitRate();
 				sim_setting.port_speed[node][intf] = bps;  //存储全网每个端口链路带宽
+				#if ENABLE_PRINT_DEBUG_LOG
+					LOG_WHITE("Node "<<node<<" Intf "<<(uint32_t)intf<<" Speed "<<bps);
+				#endif
 			}
 		}
 		sim_setting.win = maxBdp;
@@ -1089,11 +1341,14 @@ int main(int argc, char *argv[])
 	Time interPacketInterval = Seconds(0.0000005 / 2); //设置每个数据包之间的间隔时间
 
 	// maintain port number for each host 维护每个主机对之间的端口编号
+	LOG_BLUE("Maintain port number for each host.");
 	for (uint32_t i = 0; i < node_num; i++){
 		if (n.Get(i)->GetNodeType() == 0) // is host
 			for (uint32_t j = 0; j < node_num; j++){
-				if (n.Get(j)->GetNodeType() == 0)
+				if (n.Get(j)->GetNodeType() == 0){
 					portNumder[i][j] = 10000; // each host pair use port number from 10000 每对主机使用从10000开始的端口编号
+					//LOG_WHITE("Host "<<i<<" to Host "<<j<<" start port number "<<portNumder[i][j]);
+				}
 			}
 	}
 
@@ -1108,27 +1363,46 @@ int main(int argc, char *argv[])
 
 	// schedule link down 模拟链路故障
 	if (link_down_time > 0){
+		LOG_RED("Schedule link down event at "<<link_down_time<<" us for link "<<link_down_A<<" <--> "<<link_down_B);
 		Simulator::Schedule(Seconds(2) + MicroSeconds(link_down_time), &TakeDownLink, n, n.Get(link_down_A), n.Get(link_down_B));
 	}
 
 	// schedule buffer monitor 调度缓冲区监控 记录缓冲区队列长度
 	FILE* qlen_output = fopen(qlen_mon_file.c_str(), "w");
+	LOG_BLUE("Schedule buffer monitor from "<<qlen_mon_start<<" s to "<<qlen_mon_end<<" s to file "<<qlen_mon_file);
 	Simulator::Schedule(NanoSeconds(qlen_mon_start), &monitor_buffer, qlen_output, &n);
+
+        // schedule link utilization monitor 调度链路利用率监控
+        if (!link_util_mon_file.empty()) {
+                FILE* link_util_output = fopen(link_util_mon_file.c_str(), "w");
+                if (link_util_output) {
+                        fprintf(link_util_output, "# Link Utilization Monitor\n");
+                        fprintf(link_util_output, "# Format: time: <timestamp_ns>\n");
+                        fprintf(link_util_output, "# node_id port_id tx_bytes_total tx_throughput_Gbps tx_util_percent\n");
+                        fflush(link_util_output);
+                        
+                        LOG_BLUE("Schedule link utilization monitor from " << link_util_mon_start 
+                                 << " ns to " << link_util_mon_end << " ns to file " << link_util_mon_file);
+                        Simulator::Schedule(NanoSeconds(link_util_mon_start), 
+                                          &monitor_link_utilization, link_util_output, &n);
+                }
+        }
 
 	//
 	// Now, do the actual simulation.
 	//
-	std::cout << "Hello Hawkeye!\n";
-	std::cout << "Running Simulation.\n";
+	//std::cout << "Hello Hawkeye!\n";
+	LOG_GREEN("Running Simulation.");
 	fflush(stdout);
 	NS_LOG_INFO("Run Simulation.");
 	Simulator::Stop(Seconds(simulator_stop_time));
 	Simulator::Run();
 	Simulator::Destroy();
 	NS_LOG_INFO("Done.");
+	LOG_GREEN("Simulation Complete!");
 	fclose(trace_output);
 
 	endt = clock();
-	std::cout << (double)(endt - begint) / CLOCKS_PER_SEC << "\n";
+	LOG_GREEN("Total simulation time: "<<(double)(endt - begint) / CLOCKS_PER_SEC<<"s.");
 	
 }

@@ -199,26 +199,35 @@ void RdmaHw::SetNode(Ptr<Node> node){
 	m_node = node;
 }
 void RdmaHw::Setup(QpCompleteCallback cb){
+	//LOG_WHITE("[RdmaHw Setup] node=" << (m_node ? m_node->GetId() : std::numeric_limits<uint32_t>::max()));
 	for (uint32_t i = 0; i < m_nic.size(); i++){
 		Ptr<QbbNetDevice> dev = m_nic[i].dev;
 		if (dev == NULL)
 			continue;
 		// share data with NIC
 		dev->m_rdmaEQ->m_qpGrp = m_nic[i].qpGrp;
+		//LOG_WHITE("  nicIdx=" << i << " dev=" << dev->GetIfIndex() << " qpGrp=" << m_nic[i].qpGrp);
 		// setup callback
+		//LOG_WHITE("  nicIdx=" << i << " dev=" << dev->GetIfIndex() << " setting callbacks");
 		dev->m_rdmaReceiveCb = MakeCallback(&RdmaHw::Receive, this);
 		dev->m_rdmaLinkDownCb = MakeCallback(&RdmaHw::SetLinkDown, this);
 		dev->m_rdmaPktSent = MakeCallback(&RdmaHw::PktSent, this);
 		// config NIC
+		//LOG_WHITE("  nicIdx=" << i << " dev=" << dev->GetIfIndex() << " configuring RDMA EQ");
 		dev->m_rdmaEQ->m_rdmaGetNxtPkt = MakeCallback(&RdmaHw::GetNxtPacket, this);
 	}
 	// setup qp complete callback
+	//LOG_WHITE("  setting QP complete callback");
 	m_qpCompleteCallback = cb;
 }
 
 uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
 	auto &v = m_rtTable[qp->dip.Get()]; // 根据目的IP查找可用的NIC索引列表
 	if (v.size() > 0){
+		// LOG_YELLOW("GetNicIdxOfQp: node=" << (m_node ? m_node->GetId() : std::numeric_limits<uint32_t>::max())
+		// 				<< " dip=" << Ipv4Address(qp->dip)
+		// 				<< " qpHash=" << qp->GetHash()
+		// 				<< " nicIdx=" << v[qp->GetHash() % v.size()]);
 		return v[qp->GetHash() % v.size()]; // 对列表做哈希取模，实现ECMP风格的端口均衡
 	}else{
 		NS_ASSERT_MSG(false, "We assume at least one NIC is alive"); // 理论上至少应有一块可用NIC
@@ -272,14 +281,14 @@ void RdmaHw::AddQueuePair(uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Addre
 	// Notify Nic
 	m_nic[nic_idx].dev->NewQp(qp);
 	uint32_t nodeId = m_node ? m_node->GetId() : std::numeric_limits<uint32_t>::max();
-	std::cout << "[RdmaHw AddQp t=" << Simulator::Now().GetSeconds() << "s] "
-			  << "node=" << nodeId
-			  << " nicIdx=" << nic_idx
-			  << " src=" << Ipv4AddressToString(sip) << ":" << sport
-			  << " -> dst=" << Ipv4AddressToString(dip) << ":" << dport
-			  << " size=" << size << "B pg=" << pg
-			  << " baseRtt=" << baseRtt << "ns"
-			  << std::endl;
+	// std::cout << "[RdmaHw AddQp t=" << Simulator::Now().GetSeconds() << "s] "
+	// 		  << "node=" << nodeId
+	// 		  << " nicIdx=" << nic_idx
+	// 		  << " src=" << Ipv4AddressToString(sip) << ":" << sport
+	// 		  << " -> dst=" << Ipv4AddressToString(dip) << ":" << dport
+	// 		  << " size=" << size << "B pg=" << pg
+	// 		  << " baseRtt=" << baseRtt << "ns"
+	// 		  << std::endl;
 }
 
 void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
