@@ -1,5 +1,6 @@
 import os
 import matplotlib.pyplot as plt
+import argparse
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +109,10 @@ def parse_qlen(file_path, use_instantaneous=True):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Plot queue length over time.")
+    parser.add_argument("--include", nargs="*", help="Optional list of port labels to keep, e.g. SW9-P1 SW10-P2.")
+    args = parser.parse_args()
+
     if not os.path.exists(QLEN_FILE):
         print("QLEN file not found: {}".format(QLEN_FILE))
         return
@@ -127,9 +132,20 @@ def main():
     # Sort keys to have consistent colors
     sorted_keys = sorted(qlen.keys())
     
-    # Limit the number of ports to plot if there are too many
+    include_labels = set(args.include) if args.include else None
+    
+    # Filter keys based on include_labels
+    if include_labels:
+        filtered_keys = []
+        for key in sorted_keys:
+            label = "SW{}-P{}".format(key[0], key[1])
+            if label in include_labels:
+                filtered_keys.append(key)
+        sorted_keys = filtered_keys
+
+    # Limit the number of ports to plot if there are too many and no filter is applied
     max_ports = 10
-    if len(sorted_keys) > max_ports:
+    if not include_labels and len(sorted_keys) > max_ports:
         print("Found {} ports, only plotting the first {}.".format(len(sorted_keys), max_ports))
         sorted_keys = sorted_keys[:max_ports]
 

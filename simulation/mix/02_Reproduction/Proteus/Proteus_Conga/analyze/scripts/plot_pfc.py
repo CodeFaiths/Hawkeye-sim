@@ -1,6 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -88,6 +89,10 @@ def calculate_pause_rate(pause_events, time_start_ns, time_end_ns, time_window_n
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Plot PFC events and pause rates.")
+    parser.add_argument("--include", nargs="*", help="Optional list of port labels to keep, e.g. H8-1 SW10-3.")
+    args = parser.parse_args()
+
     if not os.path.exists(PFC_FILE):
         print("PFC file not found: {}".format(PFC_FILE))
         return
@@ -99,19 +104,24 @@ def main():
         print("No PFC events found!")
         return
     
+    include_labels = set(args.include) if args.include else None
+    
     # Prepare data for first plot: frame count by port
     port_data_list = []
     
     for node_id, port_id, node_type in pfc_events.keys():
-        pause_count = len(pfc_events[(node_id, port_id, node_type)]['pause'])
-        resume_count = len(pfc_events[(node_id, port_id, node_type)]['resume'])
-        total_count = pause_count + resume_count
-        
         # Create label: H{node_id}-{port_id} for hosts, SW{node_id}-{port_id} for switches
         if node_type == 0:  # host
             label = "H{}-{}".format(node_id, port_id)
         else:  # switch
             label = "SW{}-{}".format(node_id, port_id)
+            
+        if include_labels and label not in include_labels:
+            continue
+            
+        pause_count = len(pfc_events[(node_id, port_id, node_type)]['pause'])
+        resume_count = len(pfc_events[(node_id, port_id, node_type)]['resume'])
+        total_count = pause_count + resume_count
         
         port_data_list.append({
             'label': label,
