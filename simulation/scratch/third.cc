@@ -45,7 +45,7 @@ using namespace std;
 NS_LOG_COMPONENT_DEFINE("GENERIC_SIMULATION");
 
 // 设置为 1 开启日志，设置为 0 关闭日志
-#define ENABLE_PRINT_DEBUG_LOG 0
+#define ENABLE_PRINT_DEBUG_LOG 1
 
 //网络配置参数
 uint32_t cc_mode = 1;
