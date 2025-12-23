@@ -110,8 +110,35 @@ def parse_qlen(file_path, use_instantaneous=True):
 
 def main():
     parser = argparse.ArgumentParser(description="Plot queue length over time.")
-    parser.add_argument("--include", nargs="*", help="Optional list of port labels to keep, e.g. SW9-P1 SW10-P2.")
+    parser.add_argument(
+        "--include",
+        nargs="*",
+        help=(
+            "Optional list of port labels to keep. Supports formats: SW9-P1, S9-1, SW9-1."
+        ),
+    )
     args = parser.parse_args()
+
+    def parse_include_label(lbl: str):
+        """Accept SW{node}-P{port}, S{node}-{port}, or SW{node}-{port} -> return (node, port)."""
+        s = lbl.strip().upper()
+        if not s:
+            return None
+        if s.startswith("SW"):
+            body = s[2:]
+        elif s.startswith("S"):
+            body = s[1:]
+        else:
+            return None
+        parts = body.split("-")
+        if len(parts) != 2:
+            return None
+        node_str, port_str = parts[0], parts[1]
+        if port_str.startswith("P"):
+            port_str = port_str[1:]
+        if node_str.isdigit() and port_str.isdigit():
+            return (int(node_str), int(port_str))
+        return None
 
     if not os.path.exists(QLEN_FILE):
         print("QLEN file not found: {}".format(QLEN_FILE))
@@ -132,20 +159,21 @@ def main():
     # Sort keys to have consistent colors
     sorted_keys = sorted(qlen.keys())
     
-    include_labels = set(args.include) if args.include else None
-    
-    # Filter keys based on include_labels
-    if include_labels:
-        filtered_keys = []
-        for key in sorted_keys:
-            label = "SW{}-P{}".format(key[0], key[1])
-            if label in include_labels:
-                filtered_keys.append(key)
-        sorted_keys = filtered_keys
+    include_labels_raw = set(args.include) if args.include else None
+    include_pairs = None
+    if include_labels_raw:
+        include_pairs = set()
+        for lbl in include_labels_raw:
+            pair = parse_include_label(lbl)
+            if pair:
+                include_pairs.add(pair)
+    # Filter keys based on parsed include labels
+    if include_pairs:
+        sorted_keys = [key for key in sorted_keys if key in include_pairs]
 
     # Limit the number of ports to plot if there are too many and no filter is applied
     max_ports = 10
-    if not include_labels and len(sorted_keys) > max_ports:
+    if not include_pairs and len(sorted_keys) > max_ports:
         print("Found {} ports, only plotting the first {}.".format(len(sorted_keys), max_ports))
         sorted_keys = sorted_keys[:max_ports]
 

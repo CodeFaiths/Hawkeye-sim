@@ -90,8 +90,39 @@ def calculate_pause_rate(pause_events, time_start_ns, time_end_ns, time_window_n
 
 def main():
     parser = argparse.ArgumentParser(description="Plot PFC events and pause rates.")
-    parser.add_argument("--include", nargs="*", help="Optional list of port labels to keep, e.g. H8-1 SW10-3.")
+    parser.add_argument("--include", nargs="*", help=(
+        "Optional list of port labels to keep (supports H and S/SW prefixes), e.g. H8-1 S10-3 SW10-3."
+    ))
     args = parser.parse_args()
+
+    def canonical_label(lbl: str) -> str:
+        """Normalize user-specified labels to the script's canonical format.
+
+        - Hosts: always H{node}-{port}
+        - Switches: accept S{node}-{port} or SW{node}-{port}, normalize to SW{node}-{port}
+        """
+        s = lbl.strip().upper()
+        if not s:
+            return s
+        if s.startswith("H"):
+            body = s[1:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"H{int(parts[0])}-{int(parts[1])}"
+            return s
+        if s.startswith("SW"):
+            body = s[2:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"SW{int(parts[0])}-{int(parts[1])}"
+            return s
+        if s.startswith("S"):
+            body = s[1:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"SW{int(parts[0])}-{int(parts[1])}"
+            return s
+        return s
 
     if not os.path.exists(PFC_FILE):
         print("PFC file not found: {}".format(PFC_FILE))
@@ -104,7 +135,7 @@ def main():
         print("No PFC events found!")
         return
     
-    include_labels = set(args.include) if args.include else None
+    include_labels = set(canonical_label(x) for x in args.include) if args.include else None
     
     # Prepare data for first plot: frame count by port
     port_data_list = []
@@ -115,8 +146,8 @@ def main():
             label = "H{}-{}".format(node_id, port_id)
         else:  # switch
             label = "SW{}-{}".format(node_id, port_id)
-            
-        if include_labels and label not in include_labels:
+        # Filter by normalized labels if provided
+        if include_labels and canonical_label(label) not in include_labels:
             continue
             
         pause_count = len(pfc_events[(node_id, port_id, node_type)]['pause'])
