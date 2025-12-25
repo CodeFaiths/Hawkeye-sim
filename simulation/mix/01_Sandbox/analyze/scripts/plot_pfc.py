@@ -10,6 +10,7 @@ PFC_FILE = os.path.join(BASE_DIR, "..", "..", "output", "pfc.txt")
 OUT_DIR = os.path.join(BASE_DIR, "..", "figures")
 OUT_PNG1 = os.path.join(OUT_DIR, "pfc_frame_count.png")
 OUT_PNG2 = os.path.join(OUT_DIR, "pfc_pause_rate.png")
+OUT_PNG3 = os.path.join(OUT_DIR, "pfc_interval_count.png")
 
 # Ensure output directory exists
 if not os.path.exists(OUT_DIR):
@@ -90,8 +91,39 @@ def calculate_pause_rate(pause_events, time_start_ns, time_end_ns, time_window_n
 
 def main():
     parser = argparse.ArgumentParser(description="Plot PFC events and pause rates.")
-    parser.add_argument("--include", nargs="*", help="Optional list of port labels to keep, e.g. H8-1 SW10-3.")
+    parser.add_argument("--include", nargs="*", help=(
+        "Optional list of port labels to keep (supports H and S/SW prefixes), e.g. H8-1 S10-3 SW10-3."
+    ))
     args = parser.parse_args()
+
+    def canonical_label(lbl: str) -> str:
+        """Normalize user-specified labels to the script's canonical format.
+
+        - Hosts: always H{node}-{port}
+        - Switches: accept S{node}-{port} or SW{node}-{port}, normalize to SW{node}-{port}
+        """
+        s = lbl.strip().upper()
+        if not s:
+            return s
+        if s.startswith("H"):
+            body = s[1:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"H{int(parts[0])}-{int(parts[1])}"
+            return s
+        if s.startswith("SW"):
+            body = s[2:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"SW{int(parts[0])}-{int(parts[1])}"
+            return s
+        if s.startswith("S"):
+            body = s[1:]
+            parts = body.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                return f"SW{int(parts[0])}-{int(parts[1])}"
+            return s
+        return s
 
     if not os.path.exists(PFC_FILE):
         print("PFC file not found: {}".format(PFC_FILE))
@@ -104,7 +136,7 @@ def main():
         print("No PFC events found!")
         return
     
-    include_labels = set(args.include) if args.include else None
+    include_labels = set(canonical_label(x) for x in args.include) if args.include else None
     
     # Prepare data for first plot: frame count by port
     port_data_list = []
@@ -115,8 +147,8 @@ def main():
             label = "H{}-{}".format(node_id, port_id)
         else:  # switch
             label = "SW{}-{}".format(node_id, port_id)
-            
-        if include_labels and label not in include_labels:
+        # Filter by normalized labels if provided
+        if include_labels and canonical_label(label) not in include_labels:
             continue
             
         pause_count = len(pfc_events[(node_id, port_id, node_type)]['pause'])
@@ -223,6 +255,55 @@ def main():
     
     plt.savefig(OUT_PNG2, dpi=200, bbox_inches='tight')
     print("Saved second figure to {}".format(OUT_PNG2))
+    plt.close()
+    
+    # Plot 3: PFC count per time interval (Real-time count - Stacked Bar Chart)
+    plt.figure(figsize=(12, 6))
+    
+    # Define bin size for real-time count (0.1ms = 100,000 ns)
+    bin_size_ns = 100000 
+    time_bins = np.arange(time_start_ns, time_end_ns + bin_size_ns, bin_size_ns)
+    bin_centers_ms = (time_bins[:-1] + bin_size_ns / 2 - time_start_ns) / 1e6
+    
+    # Initialize bottom for stacking
+    bottom_counts = np.zeros(len(time_bins) - 1)
+    
+    # Sort ports to have consistent stacking order
+    sorted_port_labels = sorted(port_data.keys())
+    
+    for idx, label in enumerate(sorted_port_labels):
+        _, _, node_id, port_id, node_type = port_data[label]
+        # Get all events for this port (pause + resume)
+        events = pfc_events[(node_id, port_id, node_type)]
+        all_event_times = np.array(events['pause'] + events['resume'])
+        
+        if len(all_event_times) == 0:
+            continue
+            
+        # Calculate counts per bin
+        counts, _ = np.histogram(all_event_times, bins=time_bins)
+        
+        if np.sum(counts) == 0:
+            continue
+            
+        color = colors[idx % len(colors)]
+        
+        # Use bar chart with stacking
+        plt.bar(bin_centers_ms, counts, width=(bin_size_ns / 1e6) * 0.8, 
+                bottom=bottom_counts, color=color, label=label, alpha=0.8)
+        
+        # Update bottom for next stack
+        bottom_counts += counts
+
+    plt.xlabel("Time (ms)", fontsize=12)
+    plt.ylabel("PFC Frames per 0.1ms", fontsize=12)
+    plt.title("Real-time PFC Frame Count (Stacked Bar Chart, Interval: 0.1ms)", fontsize=14)
+    plt.legend(fontsize=9, loc='best', ncol=2)
+    plt.grid(True, axis='y', linestyle=":", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+    
+    plt.savefig(OUT_PNG3, dpi=200, bbox_inches='tight')
+    print("Saved third figure to {}".format(OUT_PNG3))
     plt.close()
     
     # Print summary statistics

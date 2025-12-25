@@ -1,0 +1,39 @@
+# Bandwidth Mismatch 场景配置
+# 测试拥塞控制算法在异构网络中的公平性 (100Gbps vs 50Gbps)
+TOPOLOGY_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/config/topology.txt
+FLOW_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/config/flow.txt
+TRACE_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/config/trace.txt
+TRACE_OUTPUT_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/trace_out.tr
+PFC_OUTPUT_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/pfc.txt
+FCT_OUTPUT_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/fct.txt
+QLEN_MON_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/qlen.txt
+DIR mix/01_Sandbox/01_Bandwidth_Mismatch/output
+
+# Basic link/packet parameters
+DATA_RATE 100Gbps
+LINK_DELAY 1us
+PACKET_PAYLOAD_SIZE 1000
+L2_CHUNK_SIZE 1000
+L2_ACK_INTERVAL 1
+L2_BACK_TO_ZERO 0
+
+# Congestion control / reliability
+ENABLE_QCN 0
+ERROR_RATE_PER_LINK 0
+ACK_HIGH_PRIO 1
+KMAX_MAP 2 100000000000 160 50000000000 80
+KMIN_MAP 2 100000000000 40 50000000000 20
+PMAX_MAP 2 100000000000 0.2 50000000000 0.2
+QLEN_MON_START 0
+QLEN_MON_END 5000000000
+
+SIMULATOR_STOP_TIME 0.1
+BUFFER_SIZE 1000
+HAS_WIN 0
+
+
+# Link utilization monitoring 链路利用率监控
+LINK_UTIL_MON_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/link_util.txt
+LINK_UTIL_MON_INTERVAL 5000
+LINK_UTIL_MON_START 0
+LINK_UTIL_MON_END 5000000000
