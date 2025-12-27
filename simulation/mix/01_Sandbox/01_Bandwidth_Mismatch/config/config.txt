@@ -37,3 +37,9 @@ LINK_UTIL_MON_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/link_util.txt
 LINK_UTIL_MON_INTERVAL 5000
 LINK_UTIL_MON_START 0
 LINK_UTIL_MON_END 5000000000
+
+# Ingress queue monitoring (for PFC analysis) 入队队列监控(用于PFC分析)
+INGRESS_MON_FILE mix/01_Sandbox/01_Bandwidth_Mismatch/output/ingress_queue.txt
+INGRESS_MON_INTERVAL 1000
+INGRESS_MON_START 0
+INGRESS_MON_END 5000000000

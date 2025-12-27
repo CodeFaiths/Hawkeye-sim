@@ -18,4 +18,4 @@ tags
 
 
 analysis/trace_reader
-simulation/.lock-waf_linux2_build
+simulation/.lock-waf_linux2_build*.csv

@@ -7,7 +7,7 @@ DIR mix/00_Hawkeye/output
 TOPOLOGY_FILE mix/00_Hawkeye/config/topology.txt
 FLOW_FILE mix/00_Hawkeye/config/flow.txt
 TRACE_FILE mix/00_Hawkeye/config/trace.txt
-TRACE_OUTPUT_FILE mix/00_Hawkeye/output/mix.tr
+TRACE_OUTPUT_FILE mix/00_Hawkeye/output/trace_out.tr
 FCT_OUTPUT_FILE mix/00_Hawkeye/output/fct.txt
 PFC_OUTPUT_FILE mix/00_Hawkeye/output/pfc.txt
 
@@ -67,3 +67,9 @@ LINK_UTIL_MON_FILE mix/00_Hawkeye/output/link_util.txt
 LINK_UTIL_MON_INTERVAL 100000
 LINK_UTIL_MON_START 2000000000
 LINK_UTIL_MON_END 2100000000
+
+# Ingress queue monitoring (for PFC analysis) 入队队列监控(用于PFC分析)
+INGRESS_MON_FILE mix/00_Hawkeye/output/ingress_queue.txt
+INGRESS_MON_INTERVAL 1000
+INGRESS_MON_START 2000000000
+INGRESS_MON_END 2100000000
